@@ -1,0 +1,189 @@
+networks:
+  spark-network:
+    # Nombre fijo sin "_": Hive 3 rechaza hostnames como "hive-metastore.dockerspark_spark-network".
+    name: spark-network
+    driver: bridge
+
+volumes:
+  hdfs-data:  
+  dn1-data:
+  dn2-data:
+  dn3-data:
+
+services:
+  yarn-resourcemanager:
+    # Única imagen del proyecto: se construye aquí y la reutilizan todos los servicios.
+    build:
+      context: .
+      args:
+        # "downloader" descarga Hadoop/Spark/Hive de Apache; una imagen local los reutiliza.
+        BINARIES_SOURCE: ${BINARIES_SOURCE:-downloader}
+    image: dockerspark:latest
+    hostname: yarn-resourcemanager
+    networks:
+      - spark-network
+    ports:
+      - "8082:8088"  # YARN ResourceManager Web UI (en el contenedor escucha en 8088)
+      - "8032:8032"  # ResourceManager
+      - "8030:8030"  # Scheduler
+      - "8031:8031"  # Resource Tracker
+      - "9000:9000"  # HDFS (RPC, no es web)
+      - "9870:9870"  # HDFS NameNode Web UI
+      #- "9864:9864"  ## HDFS DataNode Web UI
+    volumes:
+      - hdfs-data:/tmp/hadoop-root  # Persistencia de HDFS (NameNode + DataNode)
+      - ./config/hadoop:/opt/hadoop/etc/hadoop
+      - ./logs/yarn:/opt/hadoop/logs
+      - ./scripts:/scripts
+      - ./evidencias:/evidencias
+    environment:
+      - HADOOP_HOME=/opt/hadoop
+      - YARN_RESOURCEMANAGER_USER=root
+      - SPARK_HOME=/opt/spark
+    command: bash -c "/scripts/init-hdfs.sh && /opt/hadoop/bin/yarn resourcemanager"
+
+  yarn-nodemanager:
+    image: dockerspark:latest
+    hostname: yarn-nodemanager
+    networks:
+      - spark-network
+    ports:
+      - "8042:8042"  # NodeManager Web UI
+    volumes:
+      - ./config/hadoop:/opt/hadoop/etc/hadoop
+      - ./logs/yarn:/opt/hadoop/logs
+    environment:
+      - HADOOP_HOME=/opt/hadoop
+      - YARN_NODEMANAGER_USER=root
+    command: /opt/hadoop/bin/yarn nodemanager
+    depends_on:
+      - yarn-resourcemanager
+
+  spark-master:
+    image: dockerspark:latest
+    container_name: spark-master
+    networks:
+      - spark-network
+    ports:
+      - "8099:8080"  # Spark Master Web UI
+      - "7077:7077"  # Spark Master
+    environment:
+      - SPARK_MODE=master
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+      - HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
+    volumes:
+      - ./data:/opt/spark/data
+      - ./logs/spark:/opt/spark/logs
+      - ./config/hadoop:/opt/hadoop/etc/hadoop
+    command: ["spark-class", "org.apache.spark.deploy.master.Master"]
+
+  spark-worker:
+    image: dockerspark:latest
+    container_name: spark-worker
+    networks:
+      - spark-network
+    ports:
+      - "8081:8081"  # Spark Worker Web UI
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_CORES=1
+      - SPARK_WORKER_MEMORY=1G
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+    volumes:
+      - ./data:/opt/spark/data
+      - ./logs/spark:/opt/spark/logs
+    depends_on:
+      - spark-master
+    command: ["spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077"]
+
+  hive-metastore:
+    image: dockerspark:latest
+    container_name: hive-metastore
+    networks:
+      - spark-network
+    ports:
+      - "9083:9083"  # Hive Metastore (Thrift)
+    environment:
+      - SERVICE_PRECONDITION=spark-master:7077
+    volumes:
+      - ./data:/opt/hive/data
+      - ./logs/hive:/opt/hive/logs
+      - ./config/hive/hive-site.xml:/opt/hive/conf/hive-site.xml
+    command: ["hive", "--service", "metastore"]
+
+  hive-server:
+    image: dockerspark:latest
+    container_name: hive-server
+    networks:
+      - spark-network
+    ports:
+      - "10000:10000"  # HiveServer2 (JDBC / Beeline)
+      - "10002:10002"  # HiveServer2 Web UI
+    environment:
+      - SERVICE_PRECONDITION=hive-metastore:9083
+    volumes:
+      - ./data:/opt/hive/data
+      - ./logs/hive:/opt/hive/logs
+      - ./config/hive/hive-site.xml:/opt/hive/conf/hive-site.xml
+    depends_on:
+      - hive-metastore
+    command: ["hive", "--service", "hiveserver2"]
+
+
+    #DATANODES AGREGADOS PARA PRUEBAS DE HDFS Y YARN
+  datanode1:
+    image: dockerspark:latest
+    container_name: datanode1Grupo2
+    hostname: datanode1
+    networks:
+      - spark-network
+    ports:
+      - "9861:9864"  # DataNode 1 Web UI
+    volumes:
+      - dn1-data:/tmp/hadoop-root
+      - ./config/hadoop:/opt/hadoop/etc/hadoop
+    command: ["hdfs", "datanode"]
+    depends_on:
+      - yarn-resourcemanager
+
+  datanode2:
+    image: dockerspark:latest
+    container_name: datanode2Grupo2
+    hostname: datanode2
+    networks:
+      - spark-network
+    ports:
+      - "9862:9864"  # DataNode 2 Web UI
+    volumes:
+      - dn2-data:/tmp/hadoop-root
+      - ./config/hadoop:/opt/hadoop/etc/hadoop
+    command: ["hdfs", "datanode"]
+    depends_on:
+      - yarn-resourcemanager
+
+  datanode3:
+    image: dockerspark:latest
+    container_name: datanode3Grupo2
+    hostname: datanode3
+    networks:
+      - spark-network
+    ports:
+      - "9863:9864"  # DataNode 3 Web UI
+    volumes:
+      - dn3-data:/tmp/hadoop-root
+      - ./config/hadoop:/opt/hadoop/etc/hadoop
+    command: ["hdfs", "datanode"]
+    depends_on:
+      - yarn-resourcemanager    
+    
+
+
+
+    

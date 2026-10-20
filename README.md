@@ -13,6 +13,7 @@ Docker del grupo: [Bigdata-Dockerspark-Transnochados](https://github.com/Jhael-E
 |---|---|
 | `informe/` | Informe con portada, evidencias (capturas) y análisis de cada punto |
 | `sql/consultas.sql` | Creación de la base y la tabla, carga del CSV y las 7 consultas |
+| `cluster/` | Proyecto del clúster (docker-compose, Dockerfile, configuración de Hadoop/Hive/Spark, scripts y prácticas anteriores LG14 y LG15) |
 
 ## Contenedores usados
 
@@ -26,7 +27,8 @@ En el repositorio del grupo los nombres difieren de los del enunciado:
 ## Pasos
 
 ```bash
-# 1. Levantar el clúster (dentro del repo del grupo)
+# 1. Levantar el clúster
+cd cluster
 docker compose up -d
 docker ps
 
